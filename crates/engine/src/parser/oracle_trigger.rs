@@ -374,7 +374,19 @@ fn stamp_self_return_origin_from_trigger_condition(def: &mut TriggerDefinition) 
         return;
     };
     if let Some(execute) = def.execute.as_deref_mut() {
-        stamp_self_return_origin_in_effect(&mut execute.effect, origin);
+        stamp_self_return_origin_in_ability(execute, origin);
+    }
+}
+
+// CR 400.7e + CR 603.6: every immediate instruction referring to the
+// zone-change source must retain the zone in which the trigger can find it.
+fn stamp_self_return_origin_in_ability(ability: &mut AbilityDefinition, origin: Zone) {
+    stamp_self_return_origin_in_effect(&mut ability.effect, origin);
+    for mode in &mut ability.mode_abilities {
+        stamp_self_return_origin_in_ability(mode, origin);
+    }
+    if let Some(sub) = ability.sub_ability.as_deref_mut() {
+        stamp_self_return_origin_in_ability(sub, origin);
     }
 }
 
@@ -398,11 +410,11 @@ fn stamp_self_return_origin_in_effect(effect: &mut Effect, origin: Zone) {
             }
         }
         Effect::CreateDelayedTrigger { effect: inner, .. } => {
-            stamp_self_return_origin_in_effect(&mut inner.effect, origin);
+            stamp_self_return_origin_in_ability(inner, origin);
         }
         Effect::ChooseOneOf { branches, .. } => {
             for branch in branches.iter_mut() {
-                stamp_self_return_origin_in_effect(&mut branch.effect, origin);
+                stamp_self_return_origin_in_ability(branch, origin);
             }
         }
         _ => {}
@@ -2424,9 +2436,12 @@ pub(crate) fn lower_trigger_ir(ir: &TriggerIr) -> TriggerDefinition {
     // Gated on:
     //   1. `def.mode` is an event-source-bearing mode (see
     //      `mode_carries_event_source_object`), AND
-    //   2. the ability has no explicit targeting (`valid_target.is_none()`
-    //      AND `optional_targeting == false`) — otherwise `ParentTarget`
-    //      legitimately inherits the player's chosen target.
+    //   2. a chosen OBJECT `valid_target` does not block the lift.
+    //      A player-only slot ("target opponent" as an attach host) is a
+    //      different English referent from "it"/"that card" — CR 608.2k's
+    //      zone-changed object — so it must not keep the anaphor on
+    //      `ParentTarget`. Object-target flicker (Felidar Guardian) still
+    //      blocks. `optional_targeting == false` remains required.
     if let Some(execute) = def.execute.as_deref_mut() {
         // BecomesTarget's event object is the permanent/player that received the
         // target designation, not the spell or ability that selected it. Keep
@@ -2448,6 +2463,16 @@ pub(crate) fn lower_trigger_ir(ir: &TriggerIr) -> TriggerDefinition {
             // parent-target lift so the counter recipient is already
             // `TriggeringSource` when this checks the target.
             lift_counter_count_self_scope_to_event_source_in_ability(execute);
+            // CR 603.6 + CR 400.7e: a self-dies "return it to the battlefield"
+            // must find the card in the zone it moved to. After a targeting
+            // pause, `current_trigger_event` is gone, so `TriggeringSource`
+            // cannot resolve — stamp `SelfRef` + that zone as origin (same
+            // helper as the intervening-if self-return path).
+            if matches!(def.valid_card, Some(TargetFilter::SelfRef)) {
+                if let Some(origin) = def.destination {
+                    stamp_self_return_origin_in_ability(execute, origin);
+                }
+            }
         }
     }
 
@@ -2546,7 +2571,12 @@ fn valid_target_blocks_event_source_lift(
 ) -> bool {
     match mode {
         TriggerMode::Discarded | TriggerMode::DiscardedAll | TriggerMode::Unattach => false,
-        _ => valid_target.is_some(),
+        // CR 608.2k + CR 603.6: a player-only slot cannot be the event-source
+        // object anaphor. "return it … attached to target opponent" keeps the
+        // player as `valid_target` while "it" is the leaving object.
+        // Analog: Discarded never blocks, even with a player `valid_target`
+        // (Necropotence). Object `valid_target` still blocks (Felidar Guardian).
+        _ => valid_target.is_some_and(|filter| !filter.is_player_scope()),
     }
 }
 
