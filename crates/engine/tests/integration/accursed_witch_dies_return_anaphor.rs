@@ -3,6 +3,8 @@
 //! CR 400.7e + CR 603.6: the trigger finds its source in the destination zone.
 //! CR 712.14a: returning a double-faced card transformed uses its back face.
 
+use std::sync::Arc;
+
 use engine::game::game_object::AttachTarget;
 use engine::game::scenario::{GameScenario, P0, P1};
 use engine::game::scenario_db::GameScenarioDbExt;
@@ -45,10 +47,10 @@ fn accursed_witch_dies_return_it_binds_self() {
         obj.back_face.is_some(),
         "the return must exercise a real DFC"
     );
-    obj.trigger_definitions = triggers.into();
-    // The production rehydration above indexed the export's original trigger
-    // tree. Refresh its derived index after this test's deliberate overlay so
-    // the subsequent zone event observes the exercised definition.
+    // Keep the overlay in the base set: `process_triggers` flushes layers before
+    // collecting LKI, which materializes live triggers from this authority.
+    obj.install_trigger_base_definitions(Arc::new(triggers))
+        .expect("test trigger base set must materialize");
     reindex_object_triggers(runner.state_mut(), witch);
 
     let mut events = Vec::new();
