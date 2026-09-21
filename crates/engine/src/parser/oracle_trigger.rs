@@ -2456,7 +2456,12 @@ pub(crate) fn lower_trigger_ir(ir: &TriggerIr) -> TriggerDefinition {
             demote_becomes_target_delayed_payloads(execute);
         }
         if mode_carries_event_source_object(&def.mode)
-            && !valid_target_blocks_event_source_lift(&def.mode, def.valid_target.as_ref())
+            && !valid_target_blocks_event_source_lift(
+                &def.mode,
+                def.valid_target.as_ref(),
+                def.valid_card.as_ref(),
+                def.destination,
+            )
             && !execute.optional_targeting
         {
             lift_parent_target_to_triggering_source_in_ability(execute);
@@ -2572,15 +2577,23 @@ fn mode_carries_event_source_object(mode: &TriggerMode) -> bool {
 fn valid_target_blocks_event_source_lift(
     mode: &TriggerMode,
     valid_target: Option<&TargetFilter>,
+    valid_card: Option<&TargetFilter>,
+    destination: Option<Zone>,
 ) -> bool {
     match mode {
         TriggerMode::Discarded | TriggerMode::DiscardedAll | TriggerMode::Unattach => false,
-        // CR 608.2k + CR 603.6: a player-only slot cannot be the event-source
-        // object anaphor. "return it … attached to target opponent" keeps the
-        // player as `valid_target` while "it" is the leaving object.
-        // Analog: Discarded never blocks, even with a player `valid_target`
-        // (Necropotence). Object `valid_target` still blocks (Felidar Guardian).
-        _ => valid_target.is_some_and(|filter| !filter.is_player_scope()),
+        // CR 608.2k + CR 603.6: only a self-dies trigger's player attachment
+        // slot is distinct from its "it" anaphor. Other player-targeted
+        // zone-change triggers can bind later instructions to that player
+        // (Thought Prison's "from it"), so they must retain ParentTarget.
+        TriggerMode::ChangesZone
+            if matches!(valid_card, Some(TargetFilter::SelfRef))
+                && destination == Some(Zone::Graveyard)
+                && valid_target.is_some_and(TargetFilter::is_player_scope) =>
+        {
+            false
+        }
+        _ => valid_target.is_some(),
     }
 }
 

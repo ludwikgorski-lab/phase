@@ -6,6 +6,7 @@
 use engine::game::game_object::AttachTarget;
 use engine::game::scenario::{GameScenario, P0, P1};
 use engine::game::scenario_db::GameScenarioDbExt;
+use engine::game::trigger_index::reindex_object_triggers;
 use engine::game::triggers::process_triggers;
 use engine::game::zone_pipeline::{move_object_for_test, ZoneMoveRequest};
 use engine::parser::oracle::parse_oracle_text;
@@ -45,6 +46,10 @@ fn accursed_witch_dies_return_it_binds_self() {
         "the return must exercise a real DFC"
     );
     obj.trigger_definitions = triggers.into();
+    // The production rehydration above indexed the export's original trigger
+    // tree. Refresh its derived index after this test's deliberate overlay so
+    // the subsequent zone event observes the exercised definition.
+    reindex_object_triggers(runner.state_mut(), witch);
 
     let mut events = Vec::new();
     assert!(!move_object_for_test(
