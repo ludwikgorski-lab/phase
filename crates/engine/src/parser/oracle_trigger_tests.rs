@@ -8934,10 +8934,10 @@ fn dies_return_it_attached_to_target_opponent_lifts_it_to_event_source() {
     );
 }
 
-/// SHAPE: origin stamping must traverse the same mode/sub-ability carriers
-/// that the event-source lift traverses, including modes with their own chain.
+/// SHAPE: origin stamping must traverse every nested ability carrier, including
+/// modes, chained sub-abilities, and otherwise branches.
 #[test]
-fn self_return_origin_stamps_nested_modes_and_sub_abilities() {
+fn self_return_origin_stamps_nested_modes_sub_abilities_and_else_branches() {
     let def = parse_trigger_line(
         "When this creature dies, return it to the battlefield transformed under your control attached to target opponent.",
         "Accursed Witch",
@@ -8950,15 +8950,17 @@ fn self_return_origin_stamps_nested_modes_and_sub_abilities() {
     *target = TargetFilter::TriggeringSource;
     lifted.sub_ability = None;
 
-    let mut mode = AbilityDefinition::new(AbilityKind::Triggered, Effect::NoOp);
+    let mut mode = AbilityDefinition::new(AbilityKind::Spell, Effect::NoOp);
     mode.sub_ability = Some(Box::new(lifted.clone()));
-    let mut root = AbilityDefinition::new(AbilityKind::Triggered, Effect::NoOp);
+    let mut root = AbilityDefinition::new(AbilityKind::Spell, Effect::NoOp);
     root.mode_abilities.push(mode);
-    root.sub_ability = Some(Box::new(lifted));
+    root.sub_ability = Some(Box::new(lifted.clone()));
+    root.else_ability = Some(Box::new(lifted));
     stamp_self_return_origin_in_ability(&mut root, Zone::Graveyard);
     for returned in [
         root.sub_ability.as_deref().unwrap(),
         root.mode_abilities[0].sub_ability.as_deref().unwrap(),
+        root.else_ability.as_deref().unwrap(),
     ] {
         assert!(matches!(
             returned.effect.as_ref(),

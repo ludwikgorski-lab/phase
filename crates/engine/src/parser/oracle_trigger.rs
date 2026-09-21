@@ -388,6 +388,9 @@ fn stamp_self_return_origin_in_ability(ability: &mut AbilityDefinition, origin: 
     if let Some(sub) = ability.sub_ability.as_deref_mut() {
         stamp_self_return_origin_in_ability(sub, origin);
     }
+    if let Some(else_ability) = ability.else_ability.as_deref_mut() {
+        stamp_self_return_origin_in_ability(else_ability, origin);
+    }
 }
 
 fn stamp_self_return_origin_in_effect(effect: &mut Effect, origin: Zone) {

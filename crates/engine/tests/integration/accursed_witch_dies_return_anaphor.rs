@@ -8,7 +8,7 @@ use engine::game::scenario::{GameScenario, P0, P1};
 use engine::game::scenario_db::GameScenarioDbExt;
 use engine::game::triggers::process_triggers;
 use engine::game::zone_pipeline::{move_object_for_test, ZoneMoveRequest};
-use engine::parser::oracle_trigger::parse_trigger_line;
+use engine::parser::oracle::parse_oracle_text;
 use engine::types::ability::TargetRef;
 use engine::types::actions::GameAction;
 use engine::types::game_state::WaitingFor;
@@ -29,13 +29,22 @@ fn accursed_witch_dies_return_it_binds_self() {
     // Hydrate the real two-faced card, but parse the trigger with this source
     // tree so stale generated parser output cannot hide an origin-stamp revert.
     engine::game::rehydrate_game_from_card_db(runner.state_mut(), db);
+    let triggers = parse_oracle_text(
+        DIES_TRIGGER,
+        "Accursed Witch",
+        &[],
+        &["Creature".to_string()],
+        &[],
+    )
+    .triggers;
+    assert_eq!(triggers.len(), 1, "expected Accursed Witch's dies trigger");
     let obj = runner.state_mut().objects.get_mut(&witch).unwrap();
     assert!(!obj.transformed);
     assert!(
         obj.back_face.is_some(),
         "the return must exercise a real DFC"
     );
-    obj.trigger_definitions = vec![parse_trigger_line(DIES_TRIGGER, "Accursed Witch")].into();
+    obj.trigger_definitions = triggers.into();
 
     let mut events = Vec::new();
     assert!(!move_object_for_test(
