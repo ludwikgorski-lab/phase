@@ -2733,6 +2733,9 @@ fn lift_parent_target_to_triggering_source_in_ability(ability: &mut AbilityDefin
         if introduces_chosen_object_target(link.effect.as_ref()) {
             break;
         }
+        if let Some(else_ability) = link.else_ability.as_deref_mut() {
+            lift_parent_target_to_triggering_source_in_ability(else_ability);
+        }
         let allow_set_tap_lift =
             is_top_level && link.multi_target.is_none() && !link.optional_targeting;
         lift_parent_target_to_triggering_source(link.effect.as_mut(), allow_set_tap_lift);

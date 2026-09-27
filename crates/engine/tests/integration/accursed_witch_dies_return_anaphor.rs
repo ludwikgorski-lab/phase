@@ -21,11 +21,23 @@ use engine::types::zones::Zone;
 use crate::support::shared_card_db;
 
 const DIES_TRIGGER: &str = "When this creature dies, return it to the battlefield transformed under your control attached to target opponent.";
+const OTHERWISE_TRIGGER: &str = "When this creature dies, draw a card if you control a Wizard. Otherwise, return it to the battlefield transformed under your control attached to target opponent.";
 
 #[test]
 fn accursed_witch_dies_return_it_binds_self() {
+    assert_witch_returns_attached(DIES_TRIGGER, false);
+}
+
+#[test]
+fn accursed_witch_otherwise_return_it_binds_self() {
+    assert_witch_returns_attached(OTHERWISE_TRIGGER, true);
+}
+
+fn assert_witch_returns_attached(trigger_text: &str, otherwise: bool) {
     let db = shared_card_db().expect("the real DFC regression requires generated card data");
-    let mut scenario = GameScenario::new();
+    // Two players leave exactly one legal opponent and the engine selects it
+    // automatically. Three players exercise the target-selection pause.
+    let mut scenario = GameScenario::new_n_player(3, 42);
     scenario.at_phase(Phase::PreCombatMain);
     let witch = scenario.add_real_card(P0, "Accursed Witch", Zone::Battlefield, db);
     let mut runner = scenario.build();
@@ -33,7 +45,7 @@ fn accursed_witch_dies_return_it_binds_self() {
     // tree so stale generated parser output cannot hide an origin-stamp revert.
     engine::game::rehydrate_game_from_card_db(runner.state_mut(), db);
     let triggers = parse_oracle_text(
-        DIES_TRIGGER,
+        trigger_text,
         "Accursed Witch",
         &[],
         &["Creature".to_string()],
@@ -41,6 +53,21 @@ fn accursed_witch_dies_return_it_binds_self() {
     )
     .triggers;
     assert_eq!(triggers.len(), 1, "expected Accursed Witch's dies trigger");
+    if otherwise {
+        let branch = triggers[0]
+            .execute
+            .as_ref()
+            .and_then(|ability| ability.else_ability.as_ref())
+            .expect("the return must be an otherwise branch");
+        assert!(matches!(
+            branch.effect.as_ref(),
+            engine::types::ability::Effect::ChangeZone {
+                origin: Some(Zone::Graveyard),
+                target: engine::types::ability::TargetFilter::SelfRef,
+                ..
+            }
+        ));
+    }
     let obj = runner.state_mut().objects.get_mut(&witch).unwrap();
     assert!(!obj.transformed);
     assert!(
@@ -67,7 +94,8 @@ fn accursed_witch_dies_return_it_binds_self() {
             runner.state().waiting_for,
             WaitingFor::TriggerTargetSelection { .. } | WaitingFor::TargetSelection { .. }
         ),
-        "the dying Witch must ask for the opponent attachment target"
+        "the dying Witch must ask for the opponent attachment target; got {:?}",
+        runner.state().waiting_for
     );
     runner
         .act(GameAction::ChooseTarget {
