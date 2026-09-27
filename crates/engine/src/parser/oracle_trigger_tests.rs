@@ -8988,6 +8988,45 @@ fn self_return_origin_stamps_nested_modes_sub_abilities_and_else_branches() {
 }
 
 #[test]
+fn self_return_origin_does_not_stamp_a_delayed_triggers_future_event() {
+    let def = parse_trigger_line(
+        "When this creature dies, return it to the battlefield transformed under your control attached to target opponent.",
+        "Accursed Witch",
+    );
+    let mut return_ability = *def.execute.expect("parsed return");
+    return_ability.sub_ability = None;
+    let Effect::ChangeZone { origin, target, .. } = return_ability.effect.as_mut() else {
+        panic!("expected a parsed return");
+    };
+    *origin = None;
+    *target = TargetFilter::TriggeringSource;
+
+    let mut root = AbilityDefinition::new(
+        AbilityKind::Spell,
+        Effect::CreateDelayedTrigger {
+            condition: DelayedTriggerCondition::WhenDiesOrExiled {
+                filter: TargetFilter::ParentTarget,
+            },
+            effect: Box::new(return_ability),
+            uses_tracked_set: false,
+        },
+    );
+    stamp_self_return_origin_in_ability(&mut root, Zone::Battlefield);
+
+    let Effect::CreateDelayedTrigger { effect, .. } = root.effect.as_ref() else {
+        panic!("expected delayed trigger");
+    };
+    assert!(matches!(
+        effect.effect.as_ref(),
+        Effect::ChangeZone {
+            origin: None,
+            target: TargetFilter::TriggeringSource,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn counter_added_trigger_captures_explicit_type() {
     // CR 122.1: Hapatra — "Whenever you put one or more -1/-1 counters on a
     // creature, create a Snake" must fire ONLY on -1/-1 counters, not any

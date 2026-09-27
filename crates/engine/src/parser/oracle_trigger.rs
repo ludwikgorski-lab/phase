@@ -414,9 +414,9 @@ fn stamp_self_return_origin_in_effect(effect: &mut Effect, origin: Zone) {
                 *target = TargetFilter::SelfRef;
             }
         }
-        Effect::CreateDelayedTrigger { effect: inner, .. } => {
-            stamp_self_return_origin_in_ability(inner, origin);
-        }
+        // CR 603.7c: a delayed trigger observes its own later event. Its
+        // payload cannot inherit the enclosing trigger's source or origin.
+        Effect::CreateDelayedTrigger { .. } => {}
         Effect::ChooseOneOf { branches, .. } => {
             for branch in branches.iter_mut() {
                 stamp_self_return_origin_in_ability(branch, origin);
