@@ -8,16 +8,17 @@ use crate::parser::oracle_ir::doc::PrintedTriggerIndex;
 use crate::parser::oracle_ir::effect_chain::PlayerScopeRewrite;
 use crate::parser::test_support::assert_no_unimplemented;
 use crate::types::ability::{
-    AbilityCondition, AbilityCost, AbilityDefinition, AbilityKind, AggregateFunction, AttackScope,
+    AbilityCondition, AbilityCost, AbilityDefinition, AbilityKind, AggregateFunction,
     AttackSubject, BounceSelection, CardSelectionMode, CardTypeSetSource, CastingPermission,
-    ChosenAttribute, Comparator, ContinuousModification, ControllerRef, CopyChooseScope,
-    CopyRetargetPermission, CountScope, DamageAmountScope, DamageAmountThreshold, DamageChannel,
-    DamageModification, DamageSource, DelayedTriggerCondition, DiscardSelfScope, Duration, Effect,
-    EffectScope, FilterProp, ManaContribution, ManaProduction, ManaSpendPermission, ModalChoice,
-    ObjectProperty, ObjectScope, PerpetualModification, PlayerFilter, PlayerScope,
-    PropertyAggregate, PtStat, PtValue, PtValueScope, QuantityExpr, QuantityRef, SeatDirection,
-    SharedQuality, SiblingCondition, SubAbilityLink, TapStateChange, TargetFilter,
-    TriggerCondition, TriggerDefinition, TurnJournalKind, TypeFilter, TypedFilter, ZoneRef,
+    ChosenAttribute, CombatHistoryScope, Comparator, ContinuousModification, ControllerRef,
+    CopyChooseScope, CopyRetargetPermission, CountScope, DamageAmountScope, DamageAmountThreshold,
+    DamageChannel, DamageModification, DamageSource, DelayedTriggerCondition, DiscardSelfScope,
+    Duration, Effect, EffectScope, FilterProp, ManaContribution, ManaProduction,
+    ManaSpendPermission, ModalChoice, ObjectProperty, ObjectScope, PerpetualModification,
+    PlayerFilter, PlayerScope, PropertyAggregate, PtStat, PtValue, PtValueScope, QuantityExpr,
+    QuantityRef, SeatDirection, SharedQuality, SiblingCondition, SubAbilityLink, TapStateChange,
+    TargetFilter, TriggerCondition, TriggerDefinition, TurnJournalKind, TypeFilter, TypedFilter,
+    ZoneRef,
 };
 use crate::types::card_type::Supertype;
 use crate::types::counter::{CounterMatch, CounterType};
@@ -4627,6 +4628,7 @@ fn trigger_combat_damage_look_then_exile_face_down_grants_impulse_play() {
                 count: QuantityExpr::Fixed { value: 1 },
                 position: crate::types::ability::LibraryPosition::Top,
                 face_down: true,
+                actor: crate::types::ability::LibraryInstructionActor::Controller,
             }
         ),
         "expected face-down ExileTop from the triggering player's library, got: {:?}",
@@ -4881,7 +4883,7 @@ fn trigger_attacks() {
 /// quantity parser to mill the targeted player's library.
 #[test]
 fn trigger_attacks_target_player_mills_half_their_library_rounded_up() {
-    use crate::types::ability::{RoundingMode, ZoneRef};
+    use crate::types::ability::{ControllerRef, RoundingMode, ZoneRef};
 
     let def = parse_trigger_line(
         "Whenever this creature attacks, target player mills half their library, rounded up.",
@@ -4905,6 +4907,8 @@ fn trigger_attacks_target_player_mills_half_their_library_rounded_up() {
                     inner: Box::new(QuantityExpr::Ref {
                         qty: QuantityRef::TargetZoneCardCount {
                             zone: ZoneRef::Library,
+                            scope: ControllerRef::TargetPlayer,
+                            binding: crate::types::ability::CountBinding::Anaphoric,
                         },
                     }),
                     divisor: 2,
@@ -4921,7 +4925,7 @@ fn trigger_attacks_target_player_mills_half_their_library_rounded_up() {
 /// mode, ensuring both arms of the `RoundingMode` axis are verified.
 #[test]
 fn trigger_attacks_target_player_mills_half_their_library_rounded_down() {
-    use crate::types::ability::{RoundingMode, ZoneRef};
+    use crate::types::ability::{ControllerRef, RoundingMode, ZoneRef};
 
     let def = parse_trigger_line(
         "Whenever this creature attacks, target player mills half their library, rounded down.",
@@ -4944,6 +4948,8 @@ fn trigger_attacks_target_player_mills_half_their_library_rounded_down() {
                     inner: Box::new(QuantityExpr::Ref {
                         qty: QuantityRef::TargetZoneCardCount {
                             zone: ZoneRef::Library,
+                            scope: ControllerRef::TargetPlayer,
+                            binding: crate::types::ability::CountBinding::Anaphoric,
                         },
                     }),
                     divisor: 2,
@@ -5171,6 +5177,7 @@ fn opponent_attacks_that_player_library_binds_to_triggering_player() {
                 count: QuantityExpr::Fixed { value: 1 },
                 position: crate::types::ability::LibraryPosition::Top,
                 face_down: false,
+                actor: crate::types::ability::LibraryInstructionActor::Controller,
             }
         ),
         "expected ExileTop to bind to TriggeringPlayer, got {:?}",
@@ -5233,6 +5240,7 @@ fn trigger_maralen_etb_exile_top_two_of_target_opponents_library() {
             count,
             position: crate::types::ability::LibraryPosition::Top,
             face_down,
+            actor: _,
         } => {
             assert_eq!(
                 *count,
@@ -5276,6 +5284,7 @@ fn completed_scry_bottom_trigger_preserves_threshold_and_effect_provenance() {
             },
             position: crate::types::ability::LibraryPosition::Bottom,
             face_down: false,
+            actor: crate::types::ability::LibraryInstructionActor::Controller,
         }
     ));
 }
@@ -7519,7 +7528,9 @@ fn parse_cecil_dark_knight_then_if_life_threshold_gate_structure() {
                 assert_eq!(
                     **inner,
                     QuantityExpr::Ref {
-                        qty: QuantityRef::StartingLifeTotal,
+                        qty: QuantityRef::StartingLifeTotal {
+                            player: PlayerScope::Controller,
+                        },
                     },
                     "DivideRounded.inner must be Ref(StartingLifeTotal), got {inner:?}",
                 );
@@ -7641,7 +7652,7 @@ fn parse_angel_of_destiny_end_step_loss_issue_1599() {
         execute.player_scope,
         Some(PlayerFilter::OpponentAttacked {
             subject: AttackSubject::Source,
-            scope: AttackScope::ThisTurn,
+            scope: CombatHistoryScope::ThisTurn,
         }),
         "LoseTheGame must scope to players the source attacked this turn (issue #1599), got {:?}",
         execute.player_scope,
@@ -7661,7 +7672,10 @@ fn parse_cloud_ex_soldier_etb_attach_targets_self() {
     );
 
     let execute = def.execute.as_deref().expect("execute must be Some");
-    let Effect::Attach { attachment, target } = &*execute.effect else {
+    let Effect::Attach {
+        attachment, target, ..
+    } = &*execute.effect
+    else {
         panic!("expected Attach, got {:?}", execute.effect);
     };
     assert_eq!(
@@ -9305,6 +9319,7 @@ fn trigger_evelyn_exiles_each_library_with_collection_counter_and_permission() {
             count: QuantityExpr::Fixed { value: 1 },
             position: crate::types::ability::LibraryPosition::Top,
             face_down: false,
+            actor: crate::types::ability::LibraryInstructionActor::Controller,
         }
     ));
 
@@ -9330,7 +9345,7 @@ fn trigger_evelyn_exiles_each_library_with_collection_counter_and_permission() {
         permission,
         CastingPermission::PlayFromExile {
             frequency: CastFrequency::OncePerTurn,
-            mana_spend_permission: Some(ManaSpendPermission::AnyTypeOrColor),
+            mana_spend_permission: Some(ManaSpendPermission::AnyColor),
             ..
         }
     ));
@@ -11208,6 +11223,7 @@ fn goblin_plate_mail_amass_then_attach_to_amassed_army() {
         Effect::Attach {
             ref attachment,
             ref target,
+            ..
         } => {
             assert_eq!(
                 *attachment,
@@ -11772,25 +11788,51 @@ fn trigger_intervening_if_you_were_dealt_damage_threshold_this_turn() {
             "At the beginning of each end step, if you were dealt 4 or more damage this turn, exile this artifact.",
             "Boarded Window",
         );
-    assert!(matches!(
-        def.condition,
-        Some(TriggerCondition::QuantityComparison {
-            lhs: QuantityExpr::Ref {
-                qty: QuantityRef::DamageDealtThisTurn {
-                    source,
-                    target,
-                    ..
-                },
+    let Some(TriggerCondition::QuantityComparison {
+        lhs:
+            QuantityExpr::Ref {
+                qty:
+                    QuantityRef::DamageDealtThisTurn {
+                        source,
+                        target,
+                        aggregate,
+                        group_by,
+                        ..
+                    },
             },
-            comparator: Comparator::GE,
-            rhs: QuantityExpr::Fixed { value: 4 },
-        }) if *source == TargetFilter::Any
-            && matches!(
-                &*target,
-                TargetFilter::Typed(ref typed)
-                    if typed.controller == Some(ControllerRef::You)
-            )
-    ));
+        comparator: Comparator::GE,
+        rhs: QuantityExpr::Fixed { value: 4 },
+    }) = def.condition
+    else {
+        panic!(
+            "expected QuantityComparison(DamageDealtThisTurn) GE 4, got: {:?}",
+            def.condition
+        );
+    };
+    // "you" is the singleton subject: any source, one recipient, so `Sum` with
+    // no grouping.
+    assert_eq!(*source, TargetFilter::Any, "any source");
+    assert_eq!(aggregate, AggregateFunction::Sum);
+    assert!(
+        group_by.is_none(),
+        "the singleton subject carries no grouping"
+    );
+    // CR 120.1 + CR 120.3 + CR 120.9: the recipient is the player-only shape
+    // `And[Player, Typed{controller: You}]` — the `Player` child refuses object
+    // recipients, so damage to a permanent you control can never satisfy it.
+    let TargetFilter::And { filters } = target.as_ref() else {
+        panic!("expected the player-only And recipient filter, got {target:?}");
+    };
+    assert_eq!(
+        filters.len(),
+        2,
+        "expected [Player, Typed], got {filters:?}"
+    );
+    assert_eq!(filters[0], TargetFilter::Player);
+    let TargetFilter::Typed(tf) = &filters[1] else {
+        panic!("expected the typed controller leg, got {:?}", filters[1]);
+    };
+    assert_eq!(tf.controller, Some(ControllerRef::You));
 }
 
 #[test]
@@ -19283,7 +19325,7 @@ fn phase_trigger_enchanted_players_first_upkeep() {
         Some(Effect::AdditionalPhase {
             target: TargetFilter::TriggeringPlayer,
             phase: Phase::Upkeep,
-            after: Phase::Upkeep,
+            after: crate::types::ability::ExtraPhaseAnchor::ThisStep,
             followed_by,
             ..
         }) if followed_by.is_empty()
@@ -30091,7 +30133,10 @@ fn assert_reanimator_chain(oracle: &str, card_name: &str, expect_tapped: bool) {
         .sub_ability
         .as_deref()
         .unwrap_or_else(|| panic!("{card_name}: GenericEffect has no Attach sub"));
-    let Effect::Attach { attachment, target } = attach.effect.as_ref() else {
+    let Effect::Attach {
+        attachment, target, ..
+    } = attach.effect.as_ref()
+    else {
         panic!("{card_name}: expected Attach, got {:?}", attach.effect);
     };
     assert_eq!(
@@ -30307,7 +30352,10 @@ fn necromancy_etb_lowers_to_reanimator_grant_chain_640() {
         .sub_ability
         .as_deref()
         .expect("Necromancy: GenericEffect has no Attach sub");
-    let Effect::Attach { attachment, target } = attach.effect.as_ref() else {
+    let Effect::Attach {
+        attachment, target, ..
+    } = attach.effect.as_ref()
+    else {
         panic!("Necromancy: expected Attach, got {:?}", attach.effect);
     };
     assert_eq!(
@@ -30709,6 +30757,105 @@ fn parse_black_bolt_lethal_voice_destroys_triggering_player_controlled_permanent
             other => panic!("Lethal Voice destroy target must be a Typed filter, got {other:?}"),
         },
         other => panic!("Lethal Voice effect must be Destroy, got {other:?}"),
+    }
+}
+
+/// CR 603.2 + CR 608.2c + CR 115.1 (Sword of War and Peace, issue #9280
+/// follow-up): in a damage-done trigger whose recipient is the event player,
+/// the anaphoric "their hand" count is event-anchored — it lowers to a
+/// scoped-player read, not to a `TargetZoneCardCount` that would surface a
+/// companion announcement slot and stall the trigger at target selection.
+/// Verbatim Oracle text; revert-failing: without the rewrite the amount stays
+/// `TargetZoneCardCount`, which the slot builder reads as a declared target.
+#[test]
+fn sword_of_war_and_peace_their_hand_rewrites_to_scoped_player() {
+    let def = parse_trigger_line(
+        "Whenever equipped creature deals combat damage to a player, Sword of War and Peace deals damage to that player equal to the number of cards in their hand and you gain 1 life for each card in your hand.",
+        "Sword of War and Peace",
+    );
+    assert_eq!(def.mode, TriggerMode::DamageDone);
+    let execute = def.execute.as_ref().expect("execute must be Some");
+    match &*execute.effect {
+        Effect::DealDamage { amount, target, .. } => {
+            assert_eq!(
+                target,
+                &TargetFilter::TriggeringPlayer,
+                "Sword damage recipient must stay event-bound, got {target:?}",
+            );
+            assert_eq!(
+                amount,
+                &QuantityExpr::Ref {
+                    qty: QuantityRef::HandSize {
+                        player: PlayerScope::ScopedPlayer,
+                    },
+                },
+                "event-anchored 'their hand' must lower to a scoped-player read, got {amount:?}",
+            );
+        }
+        other => panic!("Sword effect must be DealDamage, got {other:?}"),
+    }
+    // The controller-anchored life-gain sub-ability is not event-bound, so the
+    // rewrite must leave it alone — a positive guard against over-rewriting.
+    let sub = execute
+        .sub_ability
+        .as_deref()
+        .expect("life-gain sub-ability must exist");
+    match &*sub.effect {
+        Effect::GainLife { amount, .. } => {
+            assert!(
+                matches!(
+                    amount,
+                    QuantityExpr::Ref {
+                        qty: QuantityRef::ZoneCardCount {
+                            scope: CountScope::Controller,
+                            ..
+                        },
+                    },
+                ),
+                "controller-anchored 'your hand' must stay a Controller count, got {amount:?}",
+            );
+        }
+        other => panic!("Sword sub-ability must be GainLife, got {other:?}"),
+    }
+}
+
+/// MED2 (issue #9280 review): the event-anchored rewrite must NOT erase an
+/// explicit target binding. Synthetic Sword-shape trigger with "target
+/// player's hand": the count declares its own CR 601.2c instance, so it
+/// survives as `TargetZoneCardCount` for the slot machinery while the
+/// recipient stays event-bound. Companion to the Sword pin above (anaphoric
+/// "their hand" rewrites); zero printed cards pair an event-bound recipient
+/// with an explicit count, so this shape is synthetic-only.
+#[test]
+fn damage_trigger_explicit_target_count_survives_scoped_rewrite() {
+    let def = parse_trigger_line(
+        "Whenever equipped creature deals combat damage to a player, Test Blade deals damage to that player equal to the number of cards in target player's hand.",
+        "Test Blade",
+    );
+    assert_eq!(def.mode, TriggerMode::DamageDone);
+    let execute = def.execute.as_ref().expect("execute must be Some");
+    match &*execute.effect {
+        Effect::DealDamage { amount, target, .. } => {
+            assert_eq!(
+                target,
+                &TargetFilter::TriggeringPlayer,
+                "recipient must stay event-bound, got {target:?}",
+            );
+            assert!(
+                matches!(
+                    amount,
+                    QuantityExpr::Ref {
+                        qty: QuantityRef::TargetZoneCardCount {
+                            zone: ZoneRef::Hand,
+                            scope: ControllerRef::TargetPlayer,
+                            binding: crate::types::ability::CountBinding::Explicit,
+                        },
+                    }
+                ),
+                "explicit count must survive the rewrite, got {amount:?}",
+            );
+        }
+        other => panic!("effect must be DealDamage, got {other:?}"),
     }
 }
 

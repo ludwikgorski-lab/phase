@@ -671,6 +671,16 @@ fn apply_pending_counter_post_action(
         } => super::amass::continue_amass_after_token_creation(
             state, controller, &subtype, count, &ability, events,
         ),
+        // CR 701.71a: the token-creation replacement settled; choose a Jace
+        // token and put the counters on it. `false` = paused again, either on
+        // `EmpowerJaceChoice` or on a counter-placement replacement choice.
+        PendingCounterPostAction::ContinueEmpowerJaceAfterTokenCreation {
+            controller,
+            source_id,
+            count,
+        } => super::empower_jace::continue_after_creation(
+            state, controller, source_id, count, events,
+        ),
         PendingCounterPostAction::FinalizeAmass {
             object_id,
             subtype,
@@ -2271,8 +2281,25 @@ pub(super) fn nontargeted_counter_population_ids(
     )
 }
 
+/// CR 122.1: the objects a `RemoveCounter` node removes counters from. Shared
+/// by `resolve_remove` and `stack_reach`, so a pending node is read with the
+/// resolver's own binding.
+pub(super) fn counter_removal_targets(
+    state: &GameState,
+    ability: &ResolvedAbility,
+) -> Vec<crate::types::identifiers::ObjectId> {
+    match &ability.effect {
+        Effect::RemoveCounter {
+            target:
+                target @ (TargetFilter::TrackedSet { .. } | TargetFilter::TrackedSetFiltered { .. }),
+            ..
+        } => crate::game::targeting::resolved_object_ids_for_filter(state, ability, target),
+        _ => resolve_defined_or_targets(state, ability),
+    }
+}
+
 /// Resolve targeting to object IDs using the typed TargetFilter.
-fn resolve_defined_or_targets(
+pub(super) fn resolve_defined_or_targets(
     state: &GameState,
     ability: &ResolvedAbility,
 ) -> Vec<crate::types::identifiers::ObjectId> {
@@ -2430,6 +2457,12 @@ fn resolve_defined_or_targets(
     }
 
     if let Some(filter) = target_spec {
+        if matches!(
+            filter,
+            TargetFilter::TrackedSet { .. } | TargetFilter::TrackedSetFiltered { .. }
+        ) {
+            return crate::game::targeting::resolved_object_ids_for_filter(state, ability, filter);
+        }
         let event_targets =
             crate::game::targeting::resolve_event_context_targets(state, filter, ability.source_id);
         if !event_targets.is_empty() {
@@ -3034,14 +3067,7 @@ pub fn resolve_remove(
         _ => (Some(CounterType::Plus1Plus1), 1),
     };
 
-    let targets = match &ability.effect {
-        Effect::RemoveCounter {
-            target:
-                target @ (TargetFilter::TrackedSet { .. } | TargetFilter::TrackedSetFiltered { .. }),
-            ..
-        } => crate::game::targeting::resolved_object_ids_for_filter(state, ability, target),
-        _ => resolve_defined_or_targets(state, ability),
-    };
+    let targets = counter_removal_targets(state, ability);
     let mut remaining = Vec::new();
     for obj_id in targets {
         // Build the list of (counter_type, count) pairs to remove.
