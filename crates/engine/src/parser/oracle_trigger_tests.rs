@@ -9027,6 +9027,53 @@ fn self_return_origin_does_not_stamp_a_delayed_triggers_future_event() {
 }
 
 #[test]
+fn self_etb_retrievals_do_not_inherit_battlefield_origin() {
+    fn change_zone_origins(ability: &AbilityDefinition, out: &mut Vec<Option<Zone>>) {
+        if let Effect::ChangeZone { origin, .. } = ability.effect.as_ref() {
+            out.push(*origin);
+        }
+        if let Effect::ChooseOneOf { branches, .. } = ability.effect.as_ref() {
+            for branch in branches {
+                change_zone_origins(branch, out);
+            }
+        }
+        for mode in &ability.mode_abilities {
+            change_zone_origins(mode, out);
+        }
+        if let Some(sub) = ability.sub_ability.as_deref() {
+            change_zone_origins(sub, out);
+        }
+        if let Some(otherwise) = ability.else_ability.as_deref() {
+            change_zone_origins(otherwise, out);
+        }
+    }
+
+    for (name, oracle) in [
+        (
+            "Auratouched Mage",
+            "When this creature enters, search your library for an Aura card that could enchant it. If this creature is still on the battlefield, put that Aura card onto the battlefield attached to it. Otherwise, reveal the Aura card and put it into your hand. Then shuffle.",
+        ),
+        (
+            "Nazahn, Revered Bladesmith",
+            "When Nazahn enters, search your library for an Equipment card and reveal it. If you reveal a card named Hammer of Nazahn this way, put it onto the battlefield. Otherwise, put that card into your hand. Then shuffle.",
+        ),
+        (
+            "Legion Angel",
+            "When this creature enters, you may reveal a card you own named Legion Angel from outside the game and put it into your hand.",
+        ),
+    ] {
+        let def = parse_trigger_line(oracle, name);
+        let mut origins = Vec::new();
+        change_zone_origins(def.execute.as_deref().expect("ETB execute"), &mut origins);
+        assert!(!origins.is_empty(), "{name}: retrieval must parse as ChangeZone");
+        assert!(
+            origins.iter().all(|origin| *origin != Some(Zone::Battlefield)),
+            "{name}: retrieved card does not come from the triggering source's battlefield zone: {origins:?}"
+        );
+    }
+}
+
+#[test]
 fn counter_added_trigger_captures_explicit_type() {
     // CR 122.1: Hapatra — "Whenever you put one or more -1/-1 counters on a
     // creature, create a Snake" must fire ONLY on -1/-1 counters, not any

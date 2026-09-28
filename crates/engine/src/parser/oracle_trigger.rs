@@ -2499,13 +2499,13 @@ pub(crate) fn lower_trigger_ir(ir: &TriggerIr) -> TriggerDefinition {
             // parent-target lift so the counter recipient is already
             // `TriggeringSource` when this checks the target.
             lift_counter_count_self_scope_to_event_source_in_ability(execute);
-            // CR 603.6 + CR 400.7e: a self-dies "return it to the battlefield"
-            // must find the card in the zone it moved to. After a targeting
-            // pause, `current_trigger_event` is gone, so `TriggeringSource`
-            // cannot resolve — stamp `SelfRef` + that zone as origin (same
-            // helper as the intervening-if self-return path).
+            // CR 603.6 + CR 400.7e: a self-departure trigger returning its
+            // source must find the card in the public zone it moved to. An
+            // enters-the-battlefield trigger can instead retrieve a different
+            // object from a library or outside the game; its destination is
+            // not an origin for that retrieved object.
             if matches!(def.valid_card, Some(TargetFilter::SelfRef)) {
-                if let Some(origin) = def.destination {
+                if let Some(origin @ (Zone::Graveyard | Zone::Exile)) = def.destination {
                     stamp_self_return_origin_in_ability(execute, origin);
                 }
             }
